@@ -6,7 +6,7 @@ system built using **Azure AI Vision**, **Azure Anomaly Detector**, and
 The goal is to transform traditional passive surveillance cameras into
 active, real-time safety monitoring tools.
 
-------------------------------------------------------------------------
+-----------------------------------------------------------------------
 
 ## 🚨 Problem
 
