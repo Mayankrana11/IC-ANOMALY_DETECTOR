@@ -11,5 +11,6 @@ curl.exe -X POST http://localhost:4000/api/analyze `
 
 //test.mp4 required in backend/uploads 
 //install ffmpeg and set path in environment settings
+//run npm install jimp
 
 
