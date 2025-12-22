@@ -1,5 +1,0 @@
-https://portal.azure.com/?Microsoft_Azure_Education_correlationId=bc4533c4-1566-4819-8c02-0636cc830edd&Microsoft_Azure_Education_newA4E=true&Microsoft_Azure_Education_asoSubGuid=af9afbf7-72e9-4d9d-8a65-8ad8b1b52cc0#view/Microsoft_Azure_Education/EducationMenuBlade/~/overview
-
-
-
-https://portal.azure.com/#home
