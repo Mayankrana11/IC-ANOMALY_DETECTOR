@@ -1,158 +1,201 @@
 // server.js: main backend
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const { v4: uuidv4 } = require("uuid");
 
-const config = require('./config');
-const { extractFrames } = require('./utils/frameExtractor');
-const vision = require('./services/vision');
-const anomaly = require('./services/anomaly');
-const openai = require('./services/openai');
+const config = require("./config");
+const { extractFrames } = require("./utils/frameExtractor");
+const motion = require("./services/motion"); // ✅ NEW
+const ollama = require("./services/ollama");
 
 const app = express();
 app.use(express.json());
 
+app.get("/", (req, res) => {
+  res.send(`
+    <h2>SentryVision Backend is running</h2>
+    <p>Available endpoints:</p>
+    <ul>
+      <li>GET /api/ping</li>
+      <li>POST /api/analyze</li>
+      <li>GET /api/alerts</li>
+    </ul>
+  `);
+});
+
 // Ensure folders exist
-if (!fs.existsSync(config.paths.uploads)) fs.mkdirSync(config.paths.uploads, { recursive: true });
-if (!fs.existsSync(config.paths.frames)) fs.mkdirSync(config.paths.frames, { recursive: true });
+if (!fs.existsSync(config.paths.uploads))
+  fs.mkdirSync(config.paths.uploads, { recursive: true });
+if (!fs.existsSync(config.paths.frames))
+  fs.mkdirSync(config.paths.frames, { recursive: true });
 
-// Serve frames so frontend can display thumbnails
-app.use('/frames', express.static(path.join(__dirname, config.paths.frames)));
-app.use('/uploads', express.static(path.join(__dirname, config.paths.uploads)));
+// Serve frames
+app.use("/frames", express.static(path.join(__dirname, config.paths.frames)));
+app.use("/uploads", express.static(path.join(__dirname, config.paths.uploads)));
 
-// Multer for uploads
+// Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, config.paths.uploads),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
 });
 const upload = multer({ storage });
 
-// Simple in-memory + file-backed alerts store
+// Alerts store
 let alerts = [];
 const alertsFile = path.join(__dirname, config.paths.alertsFile);
 if (fs.existsSync(alertsFile)) {
-  try { alerts = JSON.parse(fs.readFileSync(alertsFile)); } catch (e) { alerts = []; }
+  try {
+    alerts = JSON.parse(fs.readFileSync(alertsFile));
+  } catch {
+    alerts = [];
+  }
 }
 
 function persistAlerts() {
-  try { fs.writeFileSync(alertsFile, JSON.stringify(alerts, null, 2)); } catch (e) { console.error('Persist alerts failed', e); }
+  try {
+    fs.writeFileSync(alertsFile, JSON.stringify(alerts, null, 2));
+  } catch (e) {
+    console.error("Persist alerts failed", e);
+  }
 }
 
-// Cooldown state
+// Cooldown
 let cooldownActive = false;
 let cooldownStart = 0;
 
 // Health
-app.get('/api/ping', (req, res) => res.json({ ok: true, cooldownActive }));
+app.get("/api/ping", (req, res) => {
+  res.json({ ok: true, cooldownActive });
+});
 
 /**
  * /api/analyze
- * Accepts multipart form-data with field 'video'
- * Process:
- *  - If cooldownActive, store metadata and return cooldown message.
- *  - Extract frames at configured fps for up to maxSeconds.
- *  - Run Vision on frames (batched concurrency).
- *  - Build timeseries (people_count) and call Anomaly Detector once.
- *  - If anomaly_score >= threshold -> call OpenAI to classify.
- *  - If OpenAI flags HIGH -> create alert + activate cooldown.
+ * NEW FLOW:
+ * - Extract frames
+ * - Compute motion scores
+ * - Detect motion anomaly
+ * - Ollama classifies severity
+ * - High severity → alert + cooldown
  */
-app.post('/api/analyze', upload.single('video'), async (req, res) => {
+app.post("/api/analyze", upload.single("video"), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No video uploaded' });
-
-    // If in cooldown, do minimal work: persist that a video arrived and return early.
-    if (cooldownActive) {
-      const meta = { id: uuidv4(), timestamp: new Date().toISOString(), status: 'cooldown_ignored', filename: req.file.filename };
-      alerts.push({ ...meta });
-      persistAlerts();
-      return res.status(200).json({ status: 'cooldown', message: 'System in cooldown. Video recorded but AI processing skipped.', meta });
+    if (!req.file) {
+      return res.status(400).json({ error: "No video uploaded" });
     }
 
-    const videoPath = path.join(__dirname, config.paths.uploads, req.file.filename);
+    // Cooldown handling
+    if (cooldownActive) {
+      const meta = {
+        id: uuidv4(),
+        timestamp: new Date().toISOString(),
+        status: "cooldown_ignored",
+        filename: req.file.filename
+      };
+      alerts.unshift(meta);
+      persistAlerts();
+      return res.json({
+        status: "cooldown",
+        message: "System in cooldown. AI processing skipped.",
+        meta
+      });
+    }
+
+    const videoPath = path.join(
+      __dirname,
+      config.paths.uploads,
+      req.file.filename
+    );
 
     // 1) Extract frames
-    const frames = await extractFrames(videoPath, config.frameRate, config.maxSeconds);
-    // Keep at most frameRate*maxSeconds frames
-    const maxExpected = Math.ceil(config.frameRate * config.maxSeconds);
-    const selectedFrames = frames.slice(0, maxExpected);
+    const frames = await extractFrames(
+      videoPath,
+      config.frameRate,
+      config.maxSeconds
+    );
 
-    // 2) Vision analysis (batched)
-    const visionResults = await vision.runWithConcurrency(selectedFrames, config.visionConcurrency);
+    const selectedFrames = frames.slice(
+      0,
+      Math.ceil(config.frameRate * config.maxSeconds)
+    );
 
-    // 3) Build timeseries for people_count
-    const timeSeries = visionResults.map((v, idx) => ({
-      timestamp: new Date(Date.now() + idx * 1000).toISOString(),
-      value: (v && typeof v.people_count === 'number') ? v.people_count : 0
-    }));
+    // 2) MOTION ANALYSIS ✅
+    const motionScores = await motion.computeMotionScores(selectedFrames);
+    const motionResult = motion.detectMotionAnomaly(
+      motionScores,
+      config.motionZThreshold
+    );
 
-    // 4) Anomaly detection
-    const anomalyResult = await anomaly.detectTimeSeries(timeSeries);
-    const anomalyScore = Number(anomalyResult.score || 0);
+    // 3) Ollama reasoning
+    let aiDecision = {
+      flag: false,
+      severity: "Low",
+      reason: "No significant motion anomaly detected"
+    };
 
-    // 5) Decider: only call OpenAI if anomaly score crosses threshold
-    let aiDecision = { flag: false, severity: 'Low', reason: 'No anomaly or below threshold' };
-    if (anomalyScore >= config.anomalyThreshold) {
-      aiDecision = await openai.classifyEvent(visionResults, anomalyScore);
-      // If flagged and severity High -> alert + cooldown
-      if (aiDecision.flag && aiDecision.severity && aiDecision.severity.toLowerCase() === 'high') {
+    if (motionResult.is_anomaly) {
+      aiDecision = await ollama.classifyEvent(
+        [
+          {
+            signal: "motion",
+            score: motionResult.score,
+            description: "Sudden motion irregularity detected"
+          }
+        ],
+        motionResult.score
+      );
+
+      if (aiDecision.flag) {
         const alert = {
           id: uuidv4(),
           timestamp: new Date().toISOString(),
-          anomalyScore,
-          severity: 'High',
+          severity: aiDecision.severity,
           reason: aiDecision.reason,
-          sample_frame: path.basename(selectedFrames[Math.floor(selectedFrames.length / 2)] || '') // pick middle frame
+          motionScore: motionResult.score,
+          sample_frame: path.basename(
+            selectedFrames[Math.floor(selectedFrames.length / 2)] || ""
+          )
         };
-        alerts.unshift(alert); // latest first
-        persistAlerts();
 
-        // Activate cooldown
-        cooldownActive = true;
-        cooldownStart = Date.now();
-      } else if (aiDecision.flag) {
-        // Non-high flagged alerts we still save
-        const alert = {
-          id: uuidv4(),
-          timestamp: new Date().toISOString(),
-          anomalyScore,
-          severity: aiDecision.severity || 'Medium',
-          reason: aiDecision.reason,
-          sample_frame: path.basename(selectedFrames[Math.floor(selectedFrames.length / 2)] || '')
-        };
         alerts.unshift(alert);
         persistAlerts();
+
+        if (aiDecision.severity === "High") {
+          cooldownActive = true;
+          cooldownStart = Date.now();
+        }
       }
     }
 
-    // Return result
     return res.json({
       framesAnalyzed: selectedFrames.length,
-      anomalyResult,
-      anomalyScore,
+      motionResult,
       aiDecision,
       cooldownActive
     });
   } catch (err) {
-    console.error('Analyze error', err?.response?.data || err?.message || err);
-    return res.status(500).json({ error: err?.message || 'internal' });
+    console.error("Analyze error:", err?.message || err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// Endpoint to list alerts
-app.get('/api/alerts', (req, res) => {
+// Alerts list
+app.get("/api/alerts", (req, res) => {
   res.json({ cooldownActive, alerts });
 });
 
-// Background cooldown checker
+// Cooldown reset
 setInterval(() => {
-  if (cooldownActive && (Date.now() - cooldownStart) >= config.cooldownMs) {
+  if (cooldownActive && Date.now() - cooldownStart >= config.cooldownMs) {
     cooldownActive = false;
-    console.log('Cooldown expired, AI processing resumed.');
+    console.log("Cooldown expired. AI resumed.");
   }
 }, 5000);
 
+// Start server
 app.listen(config.port, () => {
-  console.log(`SentryVision backend listening on http://localhost:${config.port}`);
+  console.log(
+    `SentryVision backend running on http://localhost:${config.port}`
+  );
 });
