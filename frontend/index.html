@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SentryVision Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <h1>SentryVision – Incident Detection Dashboard</h1>
+
+  <!-- Upload -->
+  <div class="upload-box">
+    <input type="file" id="videoInput" accept="video/*" />
+    <button onclick="uploadVideo()">Analyze Video</button>
+    <span id="uploadStatus"></span>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="main-container">
+
+    <!-- Impact Frame -->
+    <div class="frame-box">
+      <p class="title">Detected Impact Frame</p>
+      <img id="impactFrame" src="" alt="No incident yet" />
+      <p id="frameName">—</p>
+    </div>
+
+    <!-- Info -->
+    <div class="info-box">
+      <p><strong>Anomaly Score:</strong> <span id="score">—</span></p>
+      <p><strong>Severity:</strong> <span id="severity">—</span></p>
+      <p><strong>Reason:</strong></p>
+      <p id="reason">—</p>
+    </div>
+
+  </div>
+
+  <!-- Cooldown -->
+  <div class="cooldown-box">
+    <p><strong>Cooldown:</strong> <span id="cooldownStatus">—</span></p>
+    <button onclick="resetCooldown()">Reset Cooldown</button>
+    <button onclick="loadAlerts()">Refresh</button>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

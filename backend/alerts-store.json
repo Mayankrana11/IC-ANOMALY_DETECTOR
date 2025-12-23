@@ -1,0 +1,50 @@
+[
+  {
+    "id": "3be995f3-cb5e-4a73-a595-45094cf16242",
+    "timestamp": "2025-12-23T18:01:46.513Z",
+    "severity": "Medium",
+    "reason": "Unusual motion pattern detected, requires further investigation.",
+    "motionScore": 0.793211506064048,
+    "sample_frame": "e152f9ef-e0b2-4814-b043-2ee25edc7f24-0011.jpg"
+  },
+  {
+    "id": "92aa273f-ddf5-4c03-b441-dd9f649a5fab",
+    "timestamp": "2025-12-23T17:51:08.439Z",
+    "severity": "Medium",
+    "reason": "Unusual motion detected, requiring further investigation",
+    "motionScore": 0.793211506064048,
+    "sample_frame": "7e9a74fb-d079-48ae-97ea-ad6bda5ac8de-0011.jpg"
+  },
+  {
+    "id": "0d751075-baaf-4908-b598-5b0c39dd5f7e",
+    "timestamp": "2025-12-22T19:11:50.527Z",
+    "status": "cooldown_ignored",
+    "filename": "1766430710524-test2.mp4"
+  },
+  {
+    "id": "342b79eb-db9e-46dc-abd8-9cf36cdb34f5",
+    "timestamp": "2025-12-22T19:08:35.891Z",
+    "status": "cooldown_ignored",
+    "filename": "1766430515887-test.mp4"
+  },
+  {
+    "id": "2a268d7a-76fb-4725-9328-19cf669013b9",
+    "timestamp": "2025-12-22T19:08:29.541Z",
+    "status": "cooldown_ignored",
+    "filename": "1766430509536-test2.mp4"
+  },
+  {
+    "id": "32e7ca52-9b1c-466c-a807-321de5e72cf8",
+    "timestamp": "2025-12-22T19:08:01.526Z",
+    "status": "cooldown_ignored",
+    "filename": "1766430481521-test2.mp4"
+  },
+  {
+    "id": "8492b5e7-014b-4bee-845d-cf82aeba0c63",
+    "timestamp": "2025-12-22T19:07:42.450Z",
+    "severity": "High",
+    "reason": "Sudden motion irregularity suggests a possible fall or accident.",
+    "motionScore": 0.793211506064048,
+    "sample_frame": "c26f8c42-34d0-4307-9913-5322ff4be265-0011.jpg"
+  }
+]

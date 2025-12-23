@@ -1,0 +1,19 @@
+cd backend
+
+node server.js
+
+
+open new terminal cd backend 
+
+
+curl.exe -X POST http://localhost:4000/api/analyze `
+  -F "video=@C:\Users\Mayank\Desktop\IC26-ANOMALY_DETECTOR\backend\uploads\test.mp4"
+
+//test.mp4 required in backend/uploads 
+//install ffmpeg and set path in environment settings
+//run npm install jimp
+
+
+cd frontend 
+npm install serve
+npm run dev
