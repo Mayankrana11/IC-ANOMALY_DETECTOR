@@ -14,3 +14,6 @@ curl.exe -X POST http://localhost:4000/api/analyze `
 //run npm install jimp
 
 
+cd frontend 
+npm install serve
+npm run dev

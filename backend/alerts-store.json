@@ -1,5 +1,21 @@
 [
   {
+    "id": "3be995f3-cb5e-4a73-a595-45094cf16242",
+    "timestamp": "2025-12-23T18:01:46.513Z",
+    "severity": "Medium",
+    "reason": "Unusual motion pattern detected, requires further investigation.",
+    "motionScore": 0.793211506064048,
+    "sample_frame": "e152f9ef-e0b2-4814-b043-2ee25edc7f24-0011.jpg"
+  },
+  {
+    "id": "92aa273f-ddf5-4c03-b441-dd9f649a5fab",
+    "timestamp": "2025-12-23T17:51:08.439Z",
+    "severity": "Medium",
+    "reason": "Unusual motion detected, requiring further investigation",
+    "motionScore": 0.793211506064048,
+    "sample_frame": "7e9a74fb-d079-48ae-97ea-ad6bda5ac8de-0011.jpg"
+  },
+  {
     "id": "0d751075-baaf-4908-b598-5b0c39dd5f7e",
     "timestamp": "2025-12-22T19:11:50.527Z",
     "status": "cooldown_ignored",

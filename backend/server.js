@@ -3,16 +3,29 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const cors = require("cors");
 const { v4: uuidv4 } = require("uuid");
 
 const config = require("./config");
 const { extractFrames } = require("./utils/frameExtractor");
-const motion = require("./services/motion"); // ✅ NEW
+const motion = require("./services/motion");
 const ollama = require("./services/ollama");
 
 const app = express();
+
+app.use(cors({
+  origin: "http://localhost:3000",
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
+}));
+
+
 app.use(express.json());
 
+
+// =====================
+// Root page
+// =====================
 app.get("/", (req, res) => {
   res.send(`
     <h2>SentryVision Backend is running</h2>
@@ -21,30 +34,42 @@ app.get("/", (req, res) => {
       <li>GET /api/ping</li>
       <li>POST /api/analyze</li>
       <li>GET /api/alerts</li>
+      <li>POST /api/reset-cooldown</li>
     </ul>
   `);
 });
 
+// =====================
 // Ensure folders exist
-if (!fs.existsSync(config.paths.uploads))
+// =====================
+if (!fs.existsSync(config.paths.uploads)) {
   fs.mkdirSync(config.paths.uploads, { recursive: true });
-if (!fs.existsSync(config.paths.frames))
+}
+if (!fs.existsSync(config.paths.frames)) {
   fs.mkdirSync(config.paths.frames, { recursive: true });
+}
 
-// Serve frames
+// =====================
+// Static serving
+// =====================
 app.use("/frames", express.static(path.join(__dirname, config.paths.frames)));
 app.use("/uploads", express.static(path.join(__dirname, config.paths.uploads)));
 
-// Multer
+// =====================
+// Multer config
+// =====================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, config.paths.uploads),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
 });
 const upload = multer({ storage });
 
+// =====================
 // Alerts store
+// =====================
 let alerts = [];
 const alertsFile = path.join(__dirname, config.paths.alertsFile);
+
 if (fs.existsSync(alertsFile)) {
   try {
     alerts = JSON.parse(fs.readFileSync(alertsFile));
@@ -61,24 +86,22 @@ function persistAlerts() {
   }
 }
 
-// Cooldown
+// =====================
+// Cooldown state
+// =====================
 let cooldownActive = false;
 let cooldownStart = 0;
 
-// Health
+// =====================
+// Health check
+// =====================
 app.get("/api/ping", (req, res) => {
   res.json({ ok: true, cooldownActive });
 });
 
-/**
- * /api/analyze
- * NEW FLOW:
- * - Extract frames
- * - Compute motion scores
- * - Detect motion anomaly
- * - Ollama classifies severity
- * - High severity → alert + cooldown
- */
+// =====================
+// Analyze endpoint
+// =====================
 app.post("/api/analyze", upload.single("video"), async (req, res) => {
   try {
     if (!req.file) {
@@ -95,6 +118,7 @@ app.post("/api/analyze", upload.single("video"), async (req, res) => {
       };
       alerts.unshift(meta);
       persistAlerts();
+
       return res.json({
         status: "cooldown",
         message: "System in cooldown. AI processing skipped.",
@@ -120,7 +144,7 @@ app.post("/api/analyze", upload.single("video"), async (req, res) => {
       Math.ceil(config.frameRate * config.maxSeconds)
     );
 
-    // 2) MOTION ANALYSIS ✅
+    // 2) Motion analysis
     const motionScores = await motion.computeMotionScores(selectedFrames);
     const motionResult = motion.detectMotionAnomaly(
       motionScores,
@@ -174,18 +198,32 @@ app.post("/api/analyze", upload.single("video"), async (req, res) => {
       aiDecision,
       cooldownActive
     });
+
   } catch (err) {
     console.error("Analyze error:", err?.message || err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
 
+// =====================
 // Alerts list
+// =====================
 app.get("/api/alerts", (req, res) => {
   res.json({ cooldownActive, alerts });
 });
 
-// Cooldown reset
+// =====================
+// Reset cooldown (DEV / DEMO)
+// =====================
+app.post("/api/reset-cooldown", (req, res) => {
+  cooldownActive = false;
+  cooldownStart = 0;
+  res.json({ ok: true, message: "Cooldown reset" });
+});
+
+// =====================
+// Cooldown expiry checker
+// =====================
 setInterval(() => {
   if (cooldownActive && Date.now() - cooldownStart >= config.cooldownMs) {
     cooldownActive = false;
@@ -193,7 +231,9 @@ setInterval(() => {
   }
 }, 5000);
 
+// =====================
 // Start server
+// =====================
 app.listen(config.port, () => {
   console.log(
     `SentryVision backend running on http://localhost:${config.port}`
