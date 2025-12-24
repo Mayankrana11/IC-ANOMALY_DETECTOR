@@ -1,4 +1,4 @@
-// server.js: main backend
+// server.js — FIXED & STABLE
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
@@ -13,23 +13,18 @@ const ollama = require("./services/ollama");
 
 const app = express();
 
-app.use(cors({
-  origin: "http://localhost:3000",
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"]
-}));
-
-
+/* =====================
+   Middleware
+===================== */
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-
-// =====================
-// Root page
-// =====================
-app.get("/", (req, res) => {
+/* =====================
+   Root
+===================== */
+app.get("/", (_, res) => {
   res.send(`
     <h2>SentryVision Backend is running</h2>
-    <p>Available endpoints:</p>
     <ul>
       <li>GET /api/ping</li>
       <li>POST /api/analyze</li>
@@ -39,34 +34,29 @@ app.get("/", (req, res) => {
   `);
 });
 
-// =====================
-// Ensure folders exist
-// =====================
-if (!fs.existsSync(config.paths.uploads)) {
-  fs.mkdirSync(config.paths.uploads, { recursive: true });
-}
-if (!fs.existsSync(config.paths.frames)) {
-  fs.mkdirSync(config.paths.frames, { recursive: true });
+/* =====================
+   Directories
+===================== */
+for (const dir of [config.paths.uploads, config.paths.frames]) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-// =====================
-// Static serving
-// =====================
-app.use("/frames", express.static(path.join(__dirname, config.paths.frames)));
-app.use("/uploads", express.static(path.join(__dirname, config.paths.uploads)));
+app.use("/frames", express.static(config.paths.frames));
+app.use("/uploads", express.static(config.paths.uploads));
 
-// =====================
-// Multer config
-// =====================
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, config.paths.uploads),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+/* =====================
+   Multer
+===================== */
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_, __, cb) => cb(null, config.paths.uploads),
+    filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+  })
 });
-const upload = multer({ storage });
 
-// =====================
-// Alerts store
-// =====================
+/* =====================
+   Alerts Store
+===================== */
 let alerts = [];
 const alertsFile = path.join(__dirname, config.paths.alertsFile);
 
@@ -78,111 +68,77 @@ if (fs.existsSync(alertsFile)) {
   }
 }
 
-function persistAlerts() {
-  try {
-    fs.writeFileSync(alertsFile, JSON.stringify(alerts, null, 2));
-  } catch (e) {
-    console.error("Persist alerts failed", e);
-  }
-}
+const persistAlerts = () =>
+  fs.writeFileSync(alertsFile, JSON.stringify(alerts, null, 2));
 
-// =====================
-// Cooldown state
-// =====================
+/* =====================
+   Cooldown
+===================== */
 let cooldownActive = false;
 let cooldownStart = 0;
 
-// =====================
-// Health check
-// =====================
-app.get("/api/ping", (req, res) => {
+/* =====================
+   Health
+===================== */
+app.get("/api/ping", (_, res) => {
   res.json({ ok: true, cooldownActive });
 });
 
-// =====================
-// Analyze endpoint
-// =====================
+/* =====================
+   ANALYZE
+===================== */
 app.post("/api/analyze", upload.single("video"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No video uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ error: "No video uploaded" });
 
-    // Cooldown handling
     if (cooldownActive) {
-      const meta = {
-        id: uuidv4(),
-        timestamp: new Date().toISOString(),
-        status: "cooldown_ignored",
-        filename: req.file.filename
-      };
-      alerts.unshift(meta);
-      persistAlerts();
-
       return res.json({
         status: "cooldown",
-        message: "System in cooldown. AI processing skipped.",
-        meta
+        cooldownActive
       });
     }
 
-    const videoPath = path.join(
-      __dirname,
-      config.paths.uploads,
-      req.file.filename
-    );
+    const videoPath = path.join(config.paths.uploads, req.file.filename);
 
-    // 1) Extract frames
     const frames = await extractFrames(
       videoPath,
       config.frameRate,
       config.maxSeconds
     );
 
-    const selectedFrames = frames.slice(
-      0,
-      Math.ceil(config.frameRate * config.maxSeconds)
-    );
-
-    // 2) Motion analysis
-    const motionScores = await motion.computeMotionScores(selectedFrames);
+    const motionScores = await motion.computeMotionScores(frames);
     const motionResult = motion.detectMotionAnomaly(
       motionScores,
       config.motionZThreshold
     );
 
-    // 3) Ollama reasoning
     let aiDecision = {
       flag: false,
-      severity: "Low",
-      reason: "No significant motion anomaly detected"
+      severity: "None",
+      reason: "No anomaly detected"
     };
+
+    let createdAlert = null;
 
     if (motionResult.is_anomaly) {
       aiDecision = await ollama.classifyEvent(
-        [
-          {
-            signal: "motion",
-            score: motionResult.score,
-            description: "Sudden motion irregularity detected"
-          }
-        ],
+        [{ signal: "motion", score: motionResult.score }],
         motionResult.score
       );
 
       if (aiDecision.flag) {
-        const alert = {
+        createdAlert = {
           id: uuidv4(),
           timestamp: new Date().toISOString(),
           severity: aiDecision.severity,
           reason: aiDecision.reason,
-          motionScore: motionResult.score,
+          anomalyScore: motionResult.score,
           sample_frame: path.basename(
-            selectedFrames[Math.floor(selectedFrames.length / 2)] || ""
+            frames[Math.floor(frames.length / 2)]
           )
         };
 
-        alerts.unshift(alert);
+        alerts.unshift(createdAlert);
         persistAlerts();
 
         if (aiDecision.severity === "High") {
@@ -192,50 +148,50 @@ app.post("/api/analyze", upload.single("video"), async (req, res) => {
       }
     }
 
-    return res.json({
-      framesAnalyzed: selectedFrames.length,
+    res.json({
+      framesAnalyzed: frames.length,
+      anomalyScore: motionResult.score,
       motionResult,
       aiDecision,
+      alert: createdAlert,
       cooldownActive
     });
 
   } catch (err) {
-    console.error("Analyze error:", err?.message || err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("Analyze error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// =====================
-// Alerts list
-// =====================
-app.get("/api/alerts", (req, res) => {
+/* =====================
+   Alerts
+===================== */
+app.get("/api/alerts", (_, res) => {
   res.json({ cooldownActive, alerts });
 });
 
-// =====================
-// Reset cooldown (DEV / DEMO)
-// =====================
-app.post("/api/reset-cooldown", (req, res) => {
+/* =====================
+   Reset Cooldown
+===================== */
+app.post("/api/reset-cooldown", (_, res) => {
   cooldownActive = false;
   cooldownStart = 0;
-  res.json({ ok: true, message: "Cooldown reset" });
+  res.json({ ok: true });
 });
 
-// =====================
-// Cooldown expiry checker
-// =====================
+/* =====================
+   Cooldown Timer
+===================== */
 setInterval(() => {
-  if (cooldownActive && Date.now() - cooldownStart >= config.cooldownMs) {
+  if (cooldownActive && Date.now() - cooldownStart > config.cooldownMs) {
     cooldownActive = false;
-    console.log("Cooldown expired. AI resumed.");
+    console.log("Cooldown expired");
   }
 }, 5000);
 
-// =====================
-// Start server
-// =====================
+/* =====================
+   Start
+===================== */
 app.listen(config.port, () => {
-  console.log(
-    `SentryVision backend running on http://localhost:${config.port}`
-  );
+  console.log(`SentryVision running on http://localhost:${config.port}`);
 });
