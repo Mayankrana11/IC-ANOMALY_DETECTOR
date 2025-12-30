@@ -1,5 +1,13 @@
 [
   {
+    "id": "41721016-47e7-4446-841b-648921705b9e",
+    "timestamp": "2025-12-30T09:33:12.095Z",
+    "severity": "High",
+    "reason": "Vehicle collision or crash detected based on motion signal score.",
+    "anomalyScore": 0.793211506064048,
+    "sample_frame": "24c47bb7-c1eb-448d-8599-5edffca708b6-0011.jpg"
+  },
+  {
     "id": "b85a5f36-6453-4a7e-92ad-f3a122cfacd9",
     "timestamp": "2025-12-30T09:30:25.762Z",
     "severity": "Medium",
