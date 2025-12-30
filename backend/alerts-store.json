@@ -1,5 +1,69 @@
 [
   {
+    "id": "b85a5f36-6453-4a7e-92ad-f3a122cfacd9",
+    "timestamp": "2025-12-30T09:30:25.762Z",
+    "severity": "Medium",
+    "reason": "Unusual motion detected, not a vehicle collision or fall.",
+    "anomalyScore": 0.7722939454757888,
+    "sample_frame": "55897d18-3f7b-4f42-be32-998a7bf786d4-0009.jpg"
+  },
+  {
+    "id": "1b46dd57-283b-4dfe-9fc6-95cc2c3ac564",
+    "timestamp": "2025-12-30T09:29:52.289Z",
+    "severity": "Medium",
+    "reason": "Unusual motion detected, requires further investigation",
+    "anomalyScore": 0.7612648064490511,
+    "sample_frame": "645f9b8a-d95f-4d54-958b-6340c2583840-0006.jpg"
+  },
+  {
+    "id": "2affc1d8-e551-4435-9789-a2cff038ca21",
+    "timestamp": "2025-12-30T09:29:08.602Z",
+    "severity": "Medium",
+    "reason": "Unusual motion detected, may indicate potential risk or unusual activity.",
+    "anomalyScore": 0.7588654888397337,
+    "sample_frame": "43dba700-4390-4b59-afb1-f5a719e570aa-0008.jpg"
+  },
+  {
+    "id": "8ddde14c-b1d8-4bb1-800a-b9e00ef12868",
+    "timestamp": "2025-12-30T09:28:57.507Z",
+    "severity": "Medium",
+    "reason": "Unusual motion detected, requires further investigation.",
+    "anomalyScore": 0.7612648064490511,
+    "sample_frame": "46439e64-241a-4262-b687-7bc716931768-0006.jpg"
+  },
+  {
+    "id": "dead2b3a-13b9-4c8c-8e0a-492d271b8f7d",
+    "timestamp": "2025-12-30T09:28:01.990Z",
+    "severity": "Medium",
+    "reason": "Unusual motion detected, requires further investigation.",
+    "anomalyScore": 0.7417444207012638,
+    "sample_frame": "c24cc674-70a1-4b1c-8f90-0dc433d0f6d2-0009.jpg"
+  },
+  {
+    "id": "e58c39ee-e2c2-483b-b781-a03b0b02e776",
+    "timestamp": "2025-12-26T19:15:15.531Z",
+    "severity": "High",
+    "reason": "Sudden motion detected, potential accident or fall risk",
+    "anomalyScore": 0.793211506064048,
+    "sample_frame": "b47512ae-6bd6-4c66-a18d-9477df1a70cb-0011.jpg"
+  },
+  {
+    "id": "4709cce8-979e-43a0-b230-6d8f3da296eb",
+    "timestamp": "2025-12-26T19:14:55.718Z",
+    "severity": "High",
+    "reason": "Unusual motion detected, potential risk of accident or injury.",
+    "anomalyScore": 0.8097310793106357,
+    "sample_frame": "db8ec601-25fd-439f-9700-7e9990447c3d-0014.jpg"
+  },
+  {
+    "id": "41cc7b23-9bcd-4d8f-8bd5-df41aa70bc59",
+    "timestamp": "2025-12-26T19:14:40.796Z",
+    "severity": "Medium",
+    "reason": "Unusual motion detected, but no clear indication of accident or immediate danger",
+    "anomalyScore": 0.793211506064048,
+    "sample_frame": "dd69d033-eb18-44f4-bbb0-2e2248d72cab-0011.jpg"
+  },
+  {
     "id": "c891ecff-4ea3-4bf6-8182-f267589f8b3b",
     "timestamp": "2025-12-24T08:19:55.810Z",
     "severity": "Medium",
