@@ -1,4 +1,5 @@
-// server.js — FIXED & STABLE
+// backend/server.js
+
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
@@ -7,191 +8,148 @@ const cors = require("cors");
 const { v4: uuidv4 } = require("uuid");
 
 const config = require("./config");
-const { extractFrames } = require("./utils/frameExtractor");
-const motion = require("./services/motion");
+const { analyzeEvents } = require("./services/anomaly");
 const ollama = require("./services/ollama");
 
 const app = express();
 
-/* =====================
-   Middleware
-===================== */
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-/* =====================
-   Root
-===================== */
-app.get("/", (_, res) => {
-  res.send(`
-    <h2>SentryVision Backend is running</h2>
-    <ul>
-      <li>GET /api/ping</li>
-      <li>POST /api/analyze</li>
-      <li>GET /api/alerts</li>
-      <li>POST /api/reset-cooldown</li>
-    </ul>
-  `);
-});
-
-/* =====================
+/* =========================
    Directories
-===================== */
-for (const dir of [config.paths.uploads, config.paths.frames]) {
+========================= */
+const UPLOAD_DIR = path.join(__dirname, "uploads");              // READ ONLY
+const INCOMING_DIR = path.join(__dirname, "incoming_uploads");  // API uploads
+const VISION_OUTPUT_DIR = path.join(__dirname, "vision_output");
+const ANNOTATED_DIR = path.join(__dirname, "annotated_videos");
+const ALERTS_FILE = path.join(__dirname, config.paths.alertsFile);
+
+// Create required dirs
+for (const dir of [
+  UPLOAD_DIR,
+  INCOMING_DIR,
+  VISION_OUTPUT_DIR,
+  ANNOTATED_DIR
+]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-app.use("/frames", express.static(config.paths.frames));
-app.use("/uploads", express.static(config.paths.uploads));
+app.use("/annotated_videos", express.static(ANNOTATED_DIR));
 
-/* =====================
-   Multer
-===================== */
+/* =========================
+   Multer (SAFE)
+   ⚠️ NEVER writes to uploads/
+========================= */
 const upload = multer({
   storage: multer.diskStorage({
-    destination: (_, __, cb) => cb(null, config.paths.uploads),
-    filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+    destination: (_, __, cb) => cb(null, INCOMING_DIR),
+    filename: (_, file, cb) =>
+      cb(null, `${Date.now()}-${file.originalname}`)
   })
 });
 
-/* =====================
-   Alerts Store
-===================== */
+/* =========================
+   Alerts / Cooldown
+========================= */
 let alerts = [];
-const alertsFile = path.join(__dirname, config.paths.alertsFile);
-
-if (fs.existsSync(alertsFile)) {
+if (fs.existsSync(ALERTS_FILE)) {
   try {
-    alerts = JSON.parse(fs.readFileSync(alertsFile));
+    alerts = JSON.parse(fs.readFileSync(ALERTS_FILE));
   } catch {
     alerts = [];
   }
 }
 
-const persistAlerts = () =>
-  fs.writeFileSync(alertsFile, JSON.stringify(alerts, null, 2));
-
-/* =====================
-   Cooldown
-===================== */
 let cooldownActive = false;
 let cooldownStart = 0;
 
-/* =====================
-   Health
-===================== */
-app.get("/api/ping", (_, res) => {
-  res.json({ ok: true, cooldownActive });
-});
+/* =========================
+   Helpers
+========================= */
+function readVisionOutput(videoName) {
+  const p = path.join(VISION_OUTPUT_DIR, `${videoName}.json`);
+  if (!fs.existsSync(p)) return null;
+  return JSON.parse(fs.readFileSync(p));
+}
 
-/* =====================
-   ANALYZE
-===================== */
+/* =========================
+   Analyze Endpoint
+========================= */
 app.post("/api/analyze", upload.single("video"), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No video uploaded" });
+    if (!req.file) {
+      return res.status(400).json({ error: "No video uploaded" });
+    }
 
-    if (cooldownActive) {
-      return res.json({
-        status: "cooldown",
-        cooldownActive
+    // IMPORTANT:
+    // We DO NOT analyze the uploaded temp file.
+    // We analyze the ORIGINAL file in uploads/
+    const originalName = req.file.originalname;
+    const visionData = readVisionOutput(originalName);
+
+    if (!visionData) {
+      return res.status(400).json({
+        error: "Run vision_engine before analysis"
       });
     }
 
-    const videoPath = path.join(config.paths.uploads, req.file.filename);
+    const anomaly = analyzeEvents(visionData.events || []);
 
-    const frames = await extractFrames(
-      videoPath,
-      config.frameRate,
-      config.maxSeconds
-    );
-
-    const motionScores = await motion.computeMotionScores(frames);
-    const motionResult = motion.detectMotionAnomaly(
-      motionScores,
-      config.motionZThreshold
+    // 🔁 Write anomaly sync file for vision pass #2
+    fs.writeFileSync(
+      path.join(VISION_OUTPUT_DIR, `${originalName}.anomaly.json`),
+      JSON.stringify(
+        {
+          eventType: anomaly.eventType,
+          objectIds: anomaly.objectIds
+        },
+        null,
+        2
+      )
     );
 
     let aiDecision = {
       flag: false,
       severity: "None",
-      reason: "No anomaly detected"
+      reason: "Normal traffic"
     };
 
-    let createdAlert = null;
-
-    if (motionResult.is_anomaly) {
-      aiDecision = await ollama.classifyEvent(
-        [{ signal: "motion", score: motionResult.score }],
-        motionResult.score
-      );
-
-      if (aiDecision.flag) {
-        createdAlert = {
-          id: uuidv4(),
-          timestamp: new Date().toISOString(),
-          severity: aiDecision.severity,
-          reason: aiDecision.reason,
-          anomalyScore: motionResult.score,
-          sample_frame: path.basename(
-            frames[Math.floor(frames.length / 2)]
-          )
+    if (anomaly.is_anomaly) {
+      if (anomaly.eventType === "COLLISION") {
+        aiDecision = await ollama.classifyEvent(
+          [{ signal: "vehicle collision" }],
+          1
+        );
+        cooldownActive = true;
+        cooldownStart = Date.now();
+      } else if (anomaly.eventType === "FALL") {
+        aiDecision = {
+          flag: true,
+          severity: "Medium",
+          reason: "Single object fall detected"
         };
-
-        alerts.unshift(createdAlert);
-        persistAlerts();
-
-        if (aiDecision.severity === "High") {
-          cooldownActive = true;
-          cooldownStart = Date.now();
-        }
       }
     }
 
     res.json({
-      framesAnalyzed: frames.length,
-      anomalyScore: motionResult.score,
-      motionResult,
+      framesAnalyzed: visionData.events.length,
+      anomalyScore: anomaly.score,
+      eventType: anomaly.eventType,
       aiDecision,
-      alert: createdAlert,
+      annotatedVideo: originalName.replace(".mp4", "_annotated.mp4"),
       cooldownActive
     });
 
   } catch (err) {
-    console.error("Analyze error:", err);
+    console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-/* =====================
-   Alerts
-===================== */
-app.get("/api/alerts", (_, res) => {
-  res.json({ cooldownActive, alerts });
-});
-
-/* =====================
-   Reset Cooldown
-===================== */
-app.post("/api/reset-cooldown", (_, res) => {
-  cooldownActive = false;
-  cooldownStart = 0;
-  res.json({ ok: true });
-});
-
-/* =====================
-   Cooldown Timer
-===================== */
-setInterval(() => {
-  if (cooldownActive && Date.now() - cooldownStart > config.cooldownMs) {
-    cooldownActive = false;
-    console.log("Cooldown expired");
-  }
-}, 5000);
-
-/* =====================
+/* =========================
    Start
-===================== */
+========================= */
 app.listen(config.port, () => {
   console.log(`SentryVision running on http://localhost:${config.port}`);
 });

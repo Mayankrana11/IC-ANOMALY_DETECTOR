@@ -1,5 +1,13 @@
 [
   {
+    "id": "1c224ec4-fada-4dc0-b342-2632b26b7537",
+    "timestamp": "2026-01-24T08:53:35.342Z",
+    "video": "test.mp4",
+    "severity": "High",
+    "reason": "Multiple vehicles involved in unusual and potentially dangerous behavior, including sudden stops, rapid accelerations, and size increases.",
+    "anomalyScore": 1
+  },
+  {
     "id": "41721016-47e7-4446-841b-648921705b9e",
     "timestamp": "2025-12-30T09:33:12.095Z",
     "severity": "High",
