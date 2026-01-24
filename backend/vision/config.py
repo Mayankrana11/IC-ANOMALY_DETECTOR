@@ -1,0 +1,12 @@
+# backend/vision/config.py
+
+CONF_THRESHOLD = 0.4
+ANOMALY_THRESHOLD = 0.7
+
+MAX_TRACK_DISTANCE = 60
+MIN_FRAMES_FOR_FEATURES = 2
+
+VIDEO_DIR = "uploads"
+OUTPUT_VIDEO = "output_annotated.mp4"
+
+ENABLE_EXPLANATION = False
