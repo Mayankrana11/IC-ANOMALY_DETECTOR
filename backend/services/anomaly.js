@@ -1,31 +1,62 @@
-// services/anomaly.js
-// Local anomaly detection (no Azure calls)
+// backend/services/anomaly.js
 
-function detectTimeSeries(timeseries) {
-  if (!Array.isArray(timeseries) || timeseries.length < 5) {
-    return { is_anomaly: false, score: 0 };
+function analyzeEvents(events) {
+  if (!events || events.length === 0) {
+    return {
+      score: 0,
+      is_anomaly: false,
+      eventType: "NONE",
+      objectIds: []
+    };
   }
 
-  const values = timeseries.map(t => Number(t.value) || 0);
+  // -------- FALL (single object) --------
+  for (const e of events) {
+    if (
+      e.stop_frames > 20 &&
+      e.avg_speed < 1 &&
+      e.trajectory_len > 20
+    ) {
+      return {
+        score: 0.6,
+        is_anomaly: true,
+        eventType: "FALL",
+        objectIds: [e.id]
+      };
+    }
+  }
 
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  // -------- COLLISION (two objects) --------
+  for (let i = 0; i < events.length; i++) {
+    for (let j = i + 1; j < events.length; j++) {
+      const A = events[i];
+      const B = events[j];
 
-  const variance =
-    values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+      const bothMovingBefore =
+        A.avg_speed > 2 &&
+        B.avg_speed > 2;
 
-  const std = Math.sqrt(variance);
+      const bothStopped =
+        A.stop_frames > 20 &&
+        B.stop_frames > 20;
 
-  const max = Math.max(...values);
-
-  const z = std === 0 ? 0 : (max - mean) / std;
-
-  // Normalize z-score → [0,1]
-  const score = Math.min(1, Math.max(0, z / 5));
+      if (bothMovingBefore && bothStopped) {
+        return {
+          score: 1,
+          is_anomaly: true,
+          eventType: "COLLISION",
+          objectIds: [A.id, B.id]
+        };
+      }
+    }
+  }
 
   return {
-    is_anomaly: score > 0.5,
-    score
+    score: 0,
+    is_anomaly: false,
+    eventType: "NONE",
+    objectIds: []
   };
 }
 
-module.exports = { detectTimeSeries };
+module.exports = { analyzeEvents };
