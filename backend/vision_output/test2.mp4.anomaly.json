@@ -1,7 +1,14 @@
 {
   "eventType": "COLLISION",
+  "startTime": 0,
+  "center": {
+    "x": 90,
+    "y": 161
+  },
+  "radius": 150,
+  "minSpeed": 30,
   "objectIds": [
-    63,
-    65
+    30,
+    30
   ]
 }

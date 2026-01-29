@@ -1,60 +1,58 @@
 // backend/services/anomaly.js
 
 function analyzeEvents(events) {
-  if (!events || events.length === 0) {
+  if (!events || events.length < 20) {
     return {
-      score: 0,
       is_anomaly: false,
       eventType: "NONE",
+      score: 0,
       objectIds: []
     };
   }
 
-  // -------- FALL (single object) --------
+  // Group by time buckets (200ms)
+  const buckets = {};
   for (const e of events) {
-    if (
-      e.stop_frames > 20 &&
-      e.avg_speed < 1 &&
-      e.trajectory_len > 20
-    ) {
-      return {
-        score: 0.6,
-        is_anomaly: true,
-        eventType: "FALL",
-        objectIds: [e.id]
-      };
-    }
+    const k = Math.floor(e.timestamp * 5);
+    if (!buckets[k]) buckets[k] = [];
+    buckets[k].push(e);
   }
 
-  // -------- COLLISION (two objects) --------
-  for (let i = 0; i < events.length; i++) {
-    for (let j = i + 1; j < events.length; j++) {
-      const A = events[i];
-      const B = events[j];
+  for (const bucket of Object.values(buckets)) {
+    if (bucket.length < 2) continue;
 
-      const bothMovingBefore =
-        A.avg_speed > 2 &&
-        B.avg_speed > 2;
+    for (let i = 0; i < bucket.length; i++) {
+      for (let j = i + 1; j < bucket.length; j++) {
+        const a = bucket[i];
+        const b = bucket[j];
 
-      const bothStopped =
-        A.stop_frames > 20 &&
-        B.stop_frames > 20;
+        const d = Math.hypot(a.cx - b.cx, a.cy - b.cy);
 
-      if (bothMovingBefore && bothStopped) {
-        return {
-          score: 1,
-          is_anomaly: true,
-          eventType: "COLLISION",
-          objectIds: [A.id, B.id]
-        };
+        if (d < 60) {
+          return {
+            is_anomaly: true,
+            eventType: "COLLISION",
+            score: 1,
+            objectIds: [a.id, b.id],
+
+            // 🔑 THESE FIELDS WERE MISSING
+            startTime: Math.min(a.timestamp, b.timestamp),
+            center: {
+              x: Math.round((a.cx + b.cx) / 2),
+              y: Math.round((a.cy + b.cy) / 2)
+            },
+            radius: 150,
+            minSpeed: 30
+          };
+        }
       }
     }
   }
 
   return {
-    score: 0,
     is_anomaly: false,
     eventType: "NONE",
+    score: 0,
     objectIds: []
   };
 }

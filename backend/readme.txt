@@ -1,32 +1,15 @@
-# SentryVision Backend (MVP)
+node server.js
 
-## Setup
-1. Install dependencies
-   cd backend
-   npm install
 
-2. Install ffmpeg on your system and ensure `ffmpeg` is on PATH:
-   - Windows: choco install ffmpeg
-   - macOS: brew install ffmpeg
-   - Linux: apt / yum as appropriate
+python -m vision.vision_engine
+curl.exe -X POST http://localhost:4000/api/analyze -F "video=@uploads/test.mp4"
+curl.exe -X POST http://localhost:4000/api/analyze -F "video=@uploads/test2.mp4"
+curl.exe -X POST http://localhost:4000/api/analyze -F "video=@uploads/test3.mp4"
+curl.exe -X POST http://localhost:4000/api/analyze -F "video=@uploads/test4.mp4"
+curl.exe -X POST http://localhost:4000/api/analyze -F "video=@uploads/test5.mp4"
+curl.exe -X POST http://localhost:4000/api/analyze -F "video=@uploads/test6.mp4"
+curl.exe -X POST http://localhost:4000/api/analyze -F "video=@uploads/test7.mp4"
+python -m vision.vision_engine
 
-3. Copy .env.local -> .env and fill Azure keys + deployment name.
 
-4. Start server:
-   npm run dev   # or npm start
 
-5. Upload a test 1-minute mp4 to POST /api/analyze (multipart/form-data, field name: 'video')
-   Example using curl:
-   curl -F "video=@myclip.mp4" http://localhost:4000/api/analyze
-
-6. Get alerts:
-   GET http://localhost:4000/api/alerts
-
-7. Thumbnails (frames) are served from /frames/<filename.jpg>
-
-## Notes
-- The server uses 1 FPS and extracts up to `MAX_SECONDS` frames per video. Adjust in .env.
-- Vision calls are batched with concurrency limit to avoid rate-limits.
-- OpenAI is only called if anomaly score >= ANOMALY_THRESHOLD.
-- A HIGH severity from OpenAI triggers a cooldown (COOLDOWN_MS) where AI processing is paused.
-- Alerts are stored to `alerts-store.json` for persistence.

@@ -1,10 +1,14 @@
 # backend/vision/vision_engine.py
+
 import os
 import cv2
 import json
 import math
 from ultralytics import YOLO
 from vision.sort_tracker import SortTracker
+
+
+# Paths
 
 BASE = os.path.dirname(__file__)
 UPLOAD = os.path.join(BASE, "..", "uploads")
@@ -14,31 +18,68 @@ ANNOT = os.path.join(BASE, "..", "annotated_videos")
 os.makedirs(OUT, exist_ok=True)
 os.makedirs(ANNOT, exist_ok=True)
 
+
+# Models
+
 model = YOLO("yolov8n.pt")
 tracker = SortTracker()
 
+
+# Colors
+
 COLORS = {
-    "NONE": (0, 255, 0),
-    "FALL": (0, 255, 255),
-    "COLLISION": (0, 0, 255)
+    "NONE": (0, 255, 0),        # Green
+    "FALL": (0, 255, 255),      # Yellow
+    "COLLISION": (0, 0, 255),   # Red
+    "FIRE": (0, 0, 255)         # Red
 }
+
+
+# Motion memory
+
+last_positions = {}  # track_id -> (cx, cy, timestamp)
+
+
+# Speed computation
+
+def compute_speed(track_id, cx, cy, ts):
+    if track_id not in last_positions:
+        last_positions[track_id] = (cx, cy, ts)
+        return 0.0
+
+    px, py, pts = last_positions[track_id]
+    dt = ts - pts
+    if dt <= 0:
+        return 0.0
+
+    dist = math.hypot(cx - px, cy - py)
+    speed = dist / dt
+
+    last_positions[track_id] = (cx, cy, ts)
+    return speed
+
+
+# Load anomaly decision
 
 def load_anomaly(video):
     p = os.path.join(OUT, f"{video}.anomaly.json")
     if not os.path.exists(p):
-        return "NONE", set()
-    d = json.load(open(p))
-    return d["eventType"], set(d["objectIds"])
+        return None
+    return json.load(open(p, "r"))
+
+
+# Main vision pass
 
 def run(video_path):
     name = os.path.basename(video_path)
     print(f"[VISION] Processing {name}")
 
-    eventType, marked = load_anomaly(name)
+    anomaly = load_anomaly(name)
 
     cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    w, h = int(cap.get(3)), int(cap.get(4))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     out = cv2.VideoWriter(
         os.path.join(ANNOT, name.replace(".mp4", "_annotated.mp4")),
@@ -47,10 +88,8 @@ def run(video_path):
         (w, h)
     )
 
+    events = []
     frame_idx = 0
-
-    # store trajectories per track id
-    trajectories = {}
 
     while True:
         ok, frame = cap.read()
@@ -58,10 +97,12 @@ def run(video_path):
             break
 
         ts = frame_idx / fps
-        res = model(frame, conf=0.4, verbose=False)[0]
+
+        # YOLO detection
+        result = model(frame, conf=0.4, verbose=False)[0]
 
         detections = []
-        for b in res.boxes:
+        for b in result.boxes:
             x1, y1, x2, y2 = map(int, b.xyxy[0])
             detections.append({
                 "bbox": (x1, y1, x2, y2),
@@ -75,22 +116,51 @@ def run(video_path):
             cx = (x1 + x2) // 2
             cy = (y1 + y2) // 2
 
-            # store trajectory
-            trajectories.setdefault(t.id, []).append((cx, cy, ts))
+            speed = compute_speed(t.id, cx, cy, ts)
 
-            state = eventType if t.id in marked else "NONE"
-            color = COLORS[state]
+            color = COLORS["NONE"]
 
+            
+            # FIX 2 — CORRECT anomaly gating
+            
+            if anomaly and anomaly.get("eventType") != "NONE":
+                start_time = anomaly.get("startTime", float("inf"))
+                center = anomaly.get("center")
+                radius = anomaly.get("radius", 120)
+                min_speed = anomaly.get("minSpeed", 30)
+
+                if ts >= start_time and center:
+                    dx = cx - center["x"]
+                    dy = cy - center["y"]
+                    dist = math.hypot(dx, dy)
+
+                    if dist <= radius and speed >= min_speed:
+                        color = COLORS.get(
+                            anomaly.get("eventType", "NONE"),
+                            COLORS["NONE"]
+                        )
+
+            # Draw
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             cv2.putText(
                 frame,
                 f"{t.cls} #{t.id}",
-                (x1, y1 - 6),
+                (x1, y1 - 5),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 color,
                 2
             )
+
+            events.append({
+                "id": t.id,
+                "class": t.cls,
+                "cx": cx,
+                "cy": cy,
+                "timestamp": ts,
+                "bbox": [x1, y1, x2, y2],
+                "speed": round(speed, 2)
+            })
 
         out.write(frame)
         frame_idx += 1
@@ -98,38 +168,14 @@ def run(video_path):
     cap.release()
     out.release()
 
-    # ==========================
-    # BUILD TRACK-LEVEL EVENTS
-    # ==========================
-    events = []
-
-    for track_id, traj in trajectories.items():
-        if len(traj) < 15:
-            continue
-
-        speeds = []
-        for i in range(1, len(traj)):
-            x1, y1, t1 = traj[i - 1]
-            x2, y2, t2 = traj[i]
-            dt = max(t2 - t1, 1e-6)
-            dist = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-            speeds.append(dist / dt)
-
-        avg_speed = sum(speeds) / len(speeds)
-        stop_frames = sum(1 for s in speeds if s < 0.5)
-
-        events.append({
-            "id": track_id,
-            "avg_speed": avg_speed,
-            "stop_frames": stop_frames,
-            "trajectory_len": len(traj)
-        })
-
     json.dump(
         {"video": name, "events": events},
         open(os.path.join(OUT, f"{name}.json"), "w"),
         indent=2
     )
+
+
+# Entry
 
 if __name__ == "__main__":
     for v in os.listdir(UPLOAD):
