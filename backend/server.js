@@ -5,7 +5,6 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const cors = require("cors");
-const { v4: uuidv4 } = require("uuid");
 
 const config = require("./config");
 const { analyzeEvents } = require("./services/anomaly");
@@ -16,9 +15,9 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-/* =========================
-   Directories
-========================= */
+
+//    Directories
+
 const UPLOAD_DIR = path.join(__dirname, "uploads");              // READ ONLY
 const INCOMING_DIR = path.join(__dirname, "incoming_uploads");  // API uploads
 const VISION_OUTPUT_DIR = path.join(__dirname, "vision_output");
@@ -37,10 +36,10 @@ for (const dir of [
 
 app.use("/annotated_videos", express.static(ANNOTATED_DIR));
 
-/* =========================
-   Multer (SAFE)
-   ⚠️ NEVER writes to uploads/
-========================= */
+
+//    Multer 
+//    NEVER writes to uploads/
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_, __, cb) => cb(null, INCOMING_DIR),
@@ -49,42 +48,31 @@ const upload = multer({
   })
 });
 
-/* =========================
-   Alerts / Cooldown
-========================= */
-let alerts = [];
-if (fs.existsSync(ALERTS_FILE)) {
-  try {
-    alerts = JSON.parse(fs.readFileSync(ALERTS_FILE));
-  } catch {
-    alerts = [];
-  }
-}
+
+//    Cooldown
 
 let cooldownActive = false;
 let cooldownStart = 0;
 
-/* =========================
-   Helpers
-========================= */
+
+//    Helpers
+
 function readVisionOutput(videoName) {
   const p = path.join(VISION_OUTPUT_DIR, `${videoName}.json`);
   if (!fs.existsSync(p)) return null;
   return JSON.parse(fs.readFileSync(p));
 }
 
-/* =========================
-   Analyze Endpoint
-========================= */
+
+//    Analyze Endpoint
+
 app.post("/api/analyze", upload.single("video"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No video uploaded" });
     }
 
-    // IMPORTANT:
-    // We DO NOT analyze the uploaded temp file.
-    // We analyze the ORIGINAL file in uploads/
+    // We analyze the ORIGINAL file already processed by vision_engine
     const originalName = req.file.originalname;
     const visionData = readVisionOutput(originalName);
 
@@ -96,18 +84,40 @@ app.post("/api/analyze", upload.single("video"), async (req, res) => {
 
     const anomaly = analyzeEvents(visionData.events || []);
 
-    // 🔁 Write anomaly sync file for vision pass #2
-    fs.writeFileSync(
-      path.join(VISION_OUTPUT_DIR, `${originalName}.anomaly.json`),
-      JSON.stringify(
-        {
-          eventType: anomaly.eventType,
-          objectIds: anomaly.objectIds
-        },
-        null,
-        2
-      )
+    const anomalyPath = path.join(
+      VISION_OUTPUT_DIR,
+      `${originalName}.anomaly.json`
     );
+
+ 
+    //    SYNC FOR VISION
+ 
+
+    if (anomaly.is_anomaly) {
+      fs.writeFileSync(
+        path.join(VISION_OUTPUT_DIR, `${originalName}.anomaly.json`),
+        JSON.stringify(
+          {
+            eventType: anomaly.eventType,
+            startTime: anomaly.startTime ?? 0,
+            center: anomaly.center ?? null,
+            radius: anomaly.radius ?? 150,
+            minSpeed: anomaly.minSpeed ?? 30,
+            objectIds: anomaly.objectIds ?? []
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      // Remove stale anomaly file so vision stays green
+      if (fs.existsSync(anomalyPath)) {
+        fs.unlinkSync(anomalyPath);
+      }
+    }
+
+
+      //  AI Decision
 
     let aiDecision = {
       flag: false,
@@ -134,8 +144,7 @@ app.post("/api/analyze", upload.single("video"), async (req, res) => {
 
     res.json({
       framesAnalyzed: visionData.events.length,
-      anomalyScore: anomaly.score,
-      eventType: anomaly.eventType,
+      eventType: anomaly.eventType || "NONE",
       aiDecision,
       annotatedVideo: originalName.replace(".mp4", "_annotated.mp4"),
       cooldownActive
@@ -147,9 +156,9 @@ app.post("/api/analyze", upload.single("video"), async (req, res) => {
   }
 });
 
-/* =========================
-   Start
-========================= */
+
+//    Start
+
 app.listen(config.port, () => {
   console.log(`SentryVision running on http://localhost:${config.port}`);
 });
