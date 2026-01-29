@@ -1,91 +1,167 @@
-# X
+# SentryVision – Video-Based Anomaly Detection System
 
-X is an intelligent CCTV incident detection and alerting
-system built using **Azure AI Vision**, **Azure Anomaly Detector**, and
-**Azure OpenAI**.\
-The goal is to transform traditional passive surveillance cameras into
-active, real-time safety monitoring tools.
+## Overview
 
------------------------------------------------------------------------
+SentryVision is a video analytics system designed to detect traffic-related anomalies such as vehicle collisions, falls, and other abnormal events from CCTV-style video feeds. The system combines classical computer vision, object detection, multi-object tracking, rule-based anomaly reasoning, and optional machine learning extensions.
 
-## 🚨 Problem
+The current implementation focuses on offline video analysis, with the architecture intentionally designed to scale toward real-time CCTV streams in future iterations.
 
-Current CCTV systems **only record**, they do not understand what is
-happening.\
-Security personnel monitoring live feeds often:
+---
 
--   Get distracted\
--   Miss early signs of violence, intrusion, or unsafe behavior\
--   Respond late to emergencies
+## High-Level Architecture
 
-There is no AI-driven system that can detect anomalies or automatically
-alert authorities.
+The system is divided into three logical layers:
 
-------------------------------------------------------------------------
+1. Vision Layer (Python)  
+   Performs object detection, tracking, motion analysis, and video annotation.
 
-## 🎯 Solution: X
+2. Anomaly Reasoning Layer (Node.js)  
+   Analyzes spatio-temporal motion data to detect anomalous events.
 
-X analyzes CCTV-like video feeds to:
+3. API & Integration Layer (Node.js + Frontend)  
+   Handles uploads, orchestrates processing, and serves results.
 
-1.  **Interpret the scene using Azure AI Vision**\
-2.  **Detect unusual or dangerous behavior with Azure Anomaly
-    Detector**\
-3.  **Explain incidents & classify severity using Azure OpenAI**\
-4.  **Generate real-time alerts for authorities**
+---
 
-This makes CCTV an **active safety assistant**, not just a recording
-tool.
+## Processing Flow
 
-------------------------------------------------------------------------
+### Step 1: Video Ingestion
+Videos are placed in the `backend/uploads/` directory.  
+These videos act as the immutable source of truth and are never modified directly.
 
-## 🧠 Azure Services Used
+### Step 2: Vision Processing (Python)
+Executed using:
+```
+python -m vision.vision_engine
+```
 
-### 1. Azure AI Vision
+This step performs:
+- YOLOv8 object detection on each frame
+- SORT-based multi-object tracking to assign stable IDs
+- Motion analysis to compute object centers, timestamps, and pixel-level speeds
+- Generation of structured motion data and annotated videos
 
--   Detects people, objects, movement patterns from video frames\
--   Provides structured signals for anomaly detection
+Outputs are written to:
+- `backend/vision_output/`
+- `backend/annotated_videos/`
 
-### 2. Azure Anomaly Detector
+### Step 3: Anomaly Analysis (Node.js)
+Triggered via API:
+```
+POST /api/analyze
+```
 
--   Identifies unusual patterns (crowd spikes, erratic movement,
-    intrusions)\
--   Outputs anomaly scores
+This stage:
+- Loads vision-generated motion data
+- Applies heuristic-based anomaly detection using proximity, motion, and time
+- Determines anomaly type (e.g., COLLISION)
+- Writes an anomaly metadata file used by the vision layer
 
-### 3. Azure OpenAI
+### Step 4: Annotation Refinement
+The vision engine is re-run after anomaly detection:
+```
+python -m vision.vision_engine
+```
 
--   Interprets anomaly scores\
--   Generates meaningful explanations\
--   Predicts severity (Low / Medium / High)\
--   Suggests recommended actions
+During this pass:
+- Anomaly metadata is loaded
+- Bounding boxes are color-coded based on time, distance, and motion
+- Only relevant objects are highlighted
 
-------------------------------------------------------------------------
+---
 
-## 🛠️ Workflow Overview
+## Directory Structure
 
-1.  **Upload CCTV-like video**\
-2.  System extracts frames\
-3.  Azure Vision analyzes frames\
-4.  Numerical patterns sent to Anomaly Detector\
-5.  Azure OpenAI interprets & explains anomalies\
-6.  Dashboard shows alerts with severity levels
+```
+├── backend
+│   ├── annotated_videos
+│   ├── incoming_uploads
+│   ├── ml
+│   ├── services
+│   ├── uploads
+│   ├── vision
+│   ├── vision_output
+│   ├── server.js
+│   └── node_modules
+│
+├── frontend
+│   ├── node_modules
+│   └── UI assets
+```
 
-------------------------------------------------------------------------
+---
 
-## 🎥 MVP Goal (for now)
+## Key Components
 
-Build a demo where:
+### Vision Engine
+Located at `backend/vision/vision_engine.py`
 
--   A video is uploaded\
--   Frames are processed through Vision → Anomaly → OpenAI\
--   Alerts are displayed on a clean dashboard
+- YOLOv8 for object detection
+- SORT tracker for persistent IDs
+- Pixel-based speed estimation
+- Anomaly-aware annotation logic
+- Outputs structured JSON and annotated videos
 
-------------------------------------------------------------------------
+### Anomaly Service
+Located at `backend/services/anomaly.js`
 
-## 📅 Timeline (MVP until Jan 9)
+- Consumes motion events
+- Detects anomalies using spatio-temporal heuristics
+- Produces anomaly descriptors for vision refinement
 
--   Week 1: Azure services integration + frame extraction\
--   Week 2: Backend pipeline + dashboard\
--   Week 3: Pitch deck, demo video, final refinements
+### API Server
+Located at `backend/server.js`
 
-------------------------------------------------------------------------
+- Handles video uploads safely
+- Orchestrates analysis flow
+- Integrates optional AI-based reasoning
+
+---
+
+## Current Capabilities
+
+- Vehicle collision detection
+- Object-level anomaly localization
+- Time-aware annotation
+- Modular design suitable for real-time extension
+
+---
+
+## Known Limitations
+
+- Heuristic-based anomaly detection can produce false positives
+- Limited semantic understanding of events
+- Accuracy depends on camera angle and scene layout
+
+---
+
+## Planned Enhancements
+
+- CNN/LSTM-based accident classifiers
+- Class-aware filtering
+- Real-time stream processing
+- Fire and fall detection using learned models
+- Improved temporal consistency
+
+---
+
+## Research and Educational Value
+
+This project demonstrates:
+- End-to-end video analytics pipeline design
+- Practical trade-offs between heuristics and machine learning
+- Real-world challenges in anomaly detection
+- Foundations for intelligent surveillance systems
+
+---
+
+## Typical Execution Workflow
+
+```
+python -m vision.vision_engine
+curl -X POST http://localhost:4000/api/analyze -F "video=@uploads/testX.mp4"
+python -m vision.vision_engine
+```
+
+---
 
