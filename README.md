@@ -1,8 +1,8 @@
-# SentryVision – Video-Based Anomaly Detection System
+# IC ANOMALY DETECTOR
 
 ## Overview
 
-SentryVision is a video analytics system designed to detect traffic-related anomalies such as vehicle collisions, falls, and other abnormal events from CCTV-style video feeds. The system combines classical computer vision, object detection, multi-object tracking, rule-based anomaly reasoning, and optional machine learning extensions.
+IC (I See) is a video analytics system designed to detect traffic-related anomalies such as vehicle collisions, falls, and other abnormal events from CCTV-style video feeds. The system combines classical computer vision, object detection, multi-object tracking, rule-based anomaly reasoning, and optional machine learning extensions.
 
 The current implementation focuses on offline video analysis, with the architecture intentionally designed to scale toward real-time CCTV streams in future iterations.
 
