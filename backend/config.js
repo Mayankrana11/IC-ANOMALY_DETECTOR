@@ -1,5 +1,5 @@
 // backend/config.js
-require("dotenv").config({ path: ".env.local" });
+require("dotenv").config({ path: ".env" });
 
 module.exports = {
   port: Number(process.env.PORT || 4000),
@@ -10,6 +10,11 @@ module.exports = {
   ollama: {
     url: process.env.OLLAMA_URL || "http://localhost:11434",
     model: process.env.OLLAMA_MODEL || "llama3"
+  },
+
+  groq: {
+    apiKey: process.env.GROQ_API_KEY,
+    model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile"
   },
 
   paths: {
