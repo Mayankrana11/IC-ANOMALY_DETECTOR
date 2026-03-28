@@ -1,14 +1,16 @@
 {
+  "is_anomaly": true,
   "eventType": "COLLISION",
-  "startTime": 0,
-  "center": {
-    "x": 541,
-    "y": 138
-  },
-  "radius": 150,
-  "minSpeed": 30,
+  "score": 1,
   "objectIds": [
     0,
     0
-  ]
+  ],
+  "startTime": 0,
+  "center": {
+    "x": 224,
+    "y": 311
+  },
+  "radius": 150,
+  "minSpeed": 30
 }
