@@ -26,6 +26,10 @@ const VISION_OUTPUT_DIR = path.join(__dirname, "vision_output");
 const ANNOTATED_DIR = path.join(__dirname, "annotated_videos");
 const ALERTS_FILE = path.join(__dirname, config.paths.alertsFile);
 
+app.get("/", (req, res) => { //GET for health check
+  res.json({ status: "ok", service: "I SEE anomaly detector" });
+});
+
 // Create required dirs
 for (const dir of [
   UPLOAD_DIR,
