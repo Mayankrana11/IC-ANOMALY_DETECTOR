@@ -8,8 +8,10 @@ const cors = require("cors");
 
 const config = require("./config");
 const { analyzeEvents } = require("./services/anomaly");
-const ollama = require("./services/ollama");
+// const ollama = require("./services/ollama"); //ollama inference
+const ollama = require("./services/groq"); //groq llama3 inference
 
+const { execSync } = require("child_process");
 const app = express();
 
 app.use(cors({ origin: "*" }));
@@ -34,7 +36,43 @@ for (const dir of [
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-app.use("/annotated_videos", express.static(ANNOTATED_DIR));
+app.get("/annotated_videos/:file", (req, res) => {
+
+  const filePath = path.join(ANNOTATED_DIR, req.params.file)
+  const stat = fs.statSync(filePath)
+  const fileSize = stat.size
+  const range = req.headers.range
+
+  if (range) {
+
+    const parts = range.replace(/bytes=/, "").split("-")
+    const start = parseInt(parts[0], 10)
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
+
+    const chunkSize = (end - start) + 1
+    const file = fs.createReadStream(filePath, { start, end })
+
+    res.writeHead(206, {
+      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+      "Accept-Ranges": "bytes",
+      "Content-Length": chunkSize,
+      "Content-Type": "video/mp4"
+    })
+
+    file.pipe(res)
+
+  } else {
+
+    res.writeHead(200, {
+      "Content-Length": fileSize,
+      "Content-Type": "video/mp4"
+    })
+
+    fs.createReadStream(filePath).pipe(res)
+
+  }
+
+})
 
 
 //    Multer 
@@ -157,8 +195,78 @@ app.post("/api/analyze", upload.single("video"), async (req, res) => {
 });
 
 
+app.post("/api/process", upload.single("video"), async (req, res) => {
+  try {
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No video uploaded" });
+    }
+
+    // copy uploaded file → uploads/test.mp4
+    const dest = path.join(UPLOAD_DIR, "test.mp4");
+    fs.copyFileSync(req.file.path, dest);
+
+    console.log("Video copied to uploads/test.mp4");
+
+    // STEP 1 vision pass
+    execSync("python -m vision.vision_engine", { cwd: __dirname });
+    console.log("Vision pass 1 done");
+
+    // STEP 2 anomaly + LLM
+    const visionData = readVisionOutput("test.mp4");
+
+    const anomaly = analyzeEvents(visionData.events || []);
+
+    const anomalyPath = path.join(
+      VISION_OUTPUT_DIR,
+      `test.mp4.anomaly.json`
+    );
+    console.log("json writing completed");
+
+    if (anomaly.is_anomaly) {
+      fs.writeFileSync(
+        anomalyPath,
+        JSON.stringify(anomaly, null, 2)
+      );
+    }
+
+    let aiDecision = {
+      flag: false,
+      severity: "None",
+      reason: "Normal traffic"
+    };
+
+    if (anomaly.is_anomaly) {
+      aiDecision = await ollama.classifyEvent(
+        [{ signal: "vehicle collision" }],
+        1
+      );
+    }
+
+    // STEP 3 render anomaly overlay
+    execSync("python -m vision.vision_engine", { cwd: __dirname });
+    console.log("Vision pass 2 done");
+
+    execSync(
+      "ffmpeg -y -i annotated_videos/test_annotated.mp4 -vcodec libx264 -acodec aac annotated_videos/test_browser.mp4"
+    )
+    console.log("ffmpeg H.264 encoding complete");
+
+    res.json({
+      eventType: anomaly.eventType || "NONE",
+      aiDecision,
+      annotatedVideo: "test_browser.mp4"
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Processing failed" });
+  }
+});
+
+
 //    Start
 
 app.listen(config.port, () => {
-  console.log(`SentryVision running on http://localhost:${config.port}`);
+  console.log(`I SEE running on http://localhost:${config.port}`);
 });
