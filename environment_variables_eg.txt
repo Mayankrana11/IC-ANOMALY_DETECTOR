@@ -1,0 +1,25 @@
+create a .env in backend with this structure:
+
+# Server
+PORT=4000 // local hosting 
+
+# Frame extraction
+FRAME_RATE=1
+MAX_SECONDS=60
+
+# Concurrency
+VISION_CONCURRENCY=4
+
+# When anomaly score >= threshold, we call OpenAI
+ANOMALY_THRESHOLD=0.01
+
+# Cooldown (ms)
+COOLDOWN_MS=300000
+
+# Ollama
+OLLAMA_URL=http://localhost:11434  //if you are using locally hosted llm via ollama
+OLLAMA_MODEL=llama3
+
+#Groq open inference
+GROQ_API_KEY= YOUR_GROQ_KEY
+GROQ_MODEL=llama-3.3-70b-versatile // or YOUR_GROQ_MODEL
